@@ -1,199 +1,192 @@
-const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Neon Survivor iPad Edition</title>
+    <style>
+        body { margin: 0; background: #000; overflow: hidden; font-family: sans-serif; }
+        canvas { display: block; }
+        #ui { position: absolute; top: 20px; left: 20px; color: white; font-size: 24px; pointer-events: none; }
+    </style>
+</head>
+<body>
+    <div id="ui">Score: 0</div>
+    <canvas id="gameCanvas"></canvas>
 
-// --- НАСТРОЙКА ЭКРАНА ---
-function resizeCanvas() {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-}
-window.addEventListener('resize', resizeCanvas);
-resizeCanvas();
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const ui = document.getElementById('ui');
 
-// --- ПЕРЕМЕННЫЕ ---
-let score = 0;
-let animationId;
-let spawnIntervalId; // Чтобы правильно останавливать спавн врагов
-let gameActive = true;
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
 
-// Массивы объектов
-const projectiles = [];
-const enemies = [];
-const particles = [];
+        let score = 0;
+        let gameActive = false;
+        let animationId;
+        let spawnIntervalId;
 
-// Таймеры
-let lastShotTime = 0;
-const SHOOT_DELAY = 150;
-let powerUpActive = false;
-let powerUpEndTime = 0;
+        const projectiles = [];
+        const enemies = [];
+        const particles = [];
 
-// --- УПРАВЛЕНИЕ ---
-const keys = {
-    KeyW: false, KeyA: false, KeyS: false, KeyD: false,
-    ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false
-};
+        const keys = {
+            KeyW: false, KeyA: false, KeyS: false, KeyD: false,
+            ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false
+        };
 
-window.addEventListener('keydown', (e) => {
-    // Если игра закончена, нажатие любой кнопки перезапустит её
-    if (!gameActive) {
-        restartGame();
-        return;
-    }
-
-    if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].indexOf(e.code) > -1) {
-        e.preventDefault();
-    }
-    if (e.code in keys) keys[e.code] = true;
-});
-
-window.addEventListener('keyup', (e) => {
-    if (e.code in keys) keys[e.code] = false;
-});
-
-// --- КЛАССЫ ---
-class Player {
-    constructor(x, y, radius, color) {
-        this.x = x; this.y = y; this.radius = radius; this.color = color;
-        this.speed = 6;
-    }
-    draw() {
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2, false);
-        ctx.fillStyle = this.color;
-        ctx.fill();
-        if (powerUpActive) {
-             ctx.strokeStyle = '#FFD700';
-             ctx.lineWidth = 4;
-             ctx.stroke();
+        // Рисуем стартовый экран сразу
+        function drawStartScreen() {
+            ctx.fillStyle = 'black';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#00ffcc';
+            ctx.font = 'bold 30px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('NEON SURVIVOR', canvas.width/2, canvas.height/2 - 40);
+            ctx.font = '20px sans-serif';
+            ctx.fillText('WASD - Ходить, Стрелки - Стрелять', canvas.width/2, canvas.height/2 + 10);
+            ctx.fillStyle = 'white';
+            ctx.fillText('НАЖМИ ЛЮБУЮ КНОПКУ ДЛЯ СТАРТА', canvas.width/2, canvas.height/2 + 60);
         }
-    }
-    update() {
-        if (keys.KeyW && this.y - this.radius > 0) this.y -= this.speed;
-        if (keys.KeyS && this.y + this.radius < canvas.height) this.y += this.speed;
-        if (keys.KeyA && this.x - this.radius > 0) this.x -= this.speed;
-        if (keys.KeyD && this.x + this.radius < canvas.width) this.x += this.speed;
 
-        this.draw();
-        this.shoot();
-
-        if (powerUpActive && Date.now() > powerUpEndTime) {
-            powerUpActive = false;
-            player.color = '#00ffcc';
-        }
-    }
-    shoot() {
-        const now = Date.now();
-        if (now - lastShotTime < SHOOT_DELAY) return;
-
-        let vx = 0; let vy = 0;
-        if (keys.ArrowUp) vy = -12;
-        if (keys.ArrowDown) vy = 12;
-        if (keys.ArrowLeft) vx = -12;
-        if (keys.ArrowRight) vx = 12;
-
-        if (vx !== 0 || vy !== 0) {
-            const bulletColor = powerUpActive ? '#FFD700' : '#ffff00';
-            projectiles.push(new Projectile(this.x, this.y, 6, bulletColor, {x: vx, y: vy}));
-
-            if (powerUpActive) {
-                const angle = Math.atan2(vy, vx);
-                const angle1 = angle - 0.35;
-                const angle2 = angle + 0.35;
-                projectiles.push(new Projectile(this.x, this.y, 5, bulletColor, {x: Math.cos(angle1)*12, y: Math.sin(angle1)*12}));
-                projectiles.push(new Projectile(this.x, this.y, 5, bulletColor, {x: Math.cos(angle2)*12, y: Math.sin(angle2)*12}));
+        window.addEventListener('keydown', (e) => {
+            if (!gameActive) {
+                startGame();
             }
-            lastShotTime = now;
+            if (e.code in keys) {
+                keys[e.code] = true;
+                if(e.code.includes('Arrow')) e.preventDefault();
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (e.code in keys) keys[e.code] = false;
+        });
+
+        class Player {
+            constructor(x, y, radius, color) {
+                this.x = x; this.y = y; this.radius = radius; this.color = color;
+                this.speed = 6;
+            }
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+            update() {
+                if (keys.KeyW && this.y > this.radius) this.y -= this.speed;
+                if (keys.KeyS && this.y < canvas.height - this.radius) this.y += this.speed;
+                if (keys.KeyA && this.x > this.radius) this.x -= this.speed;
+                if (keys.KeyD && this.x < canvas.width - this.radius) this.x += this.speed;
+                this.draw();
+                this.shoot();
+            }
+            shoot() {
+                if (Date.now() % 10 !== 0) return; // Ограничение скорострельности
+                let vx = 0, vy = 0;
+                if (keys.ArrowUp) vy = -12;
+                if (keys.ArrowDown) vy = 12;
+                if (keys.ArrowLeft) vx = -12;
+                if (keys.ArrowRight) vx = 12;
+
+                if (vx !== 0 || vy !== 0) {
+                    projectiles.push(new Projectile(this.x, this.y, 5, '#ffff00', {x: vx, y: vy}));
+                }
+            }
         }
-    }
-}
 
-class Projectile {
-    constructor(x, y, radius, color, velocity) {
-        this.x = x; this.y = y; this.radius = radius; this.color = color; this.velocity = velocity;
-    }
-    draw() {
-        ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2, false);
-        ctx.fillStyle = this.color; ctx.fill();
-    }
-    update() { this.draw(); this.x += this.velocity.x; this.y += this.velocity.y; }
-}
-
-class Enemy {
-    constructor(x, y, radius, color, velocity) {
-        this.x = x; this.y = y; this.radius = radius; this.color = color; this.velocity = velocity;
-    }
-    draw() {
-        ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2, false);
-        ctx.fillStyle = this.color; ctx.fill();
-    }
-    update() { this.draw(); this.x += this.velocity.x; this.y += this.velocity.y; }
-}
-
-class Particle {
-    constructor(x, y, radius, color, velocity) {
-        this.x = x; this.y = y; this.radius = radius; this.color = color; this.velocity = velocity;
-        this.alpha = 1;
-    }
-    draw() {
-        ctx.save(); ctx.globalAlpha = this.alpha;
-        ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2, false);
-        ctx.fillStyle = this.color; ctx.fill(); ctx.restore();
-    }
-    update() { this.draw(); this.x += this.velocity.x * 0.95; this.y += this.velocity.y * 0.95; this.alpha -= 0.02; }
-}
-
-// --- ФУНКЦИИ ИГРЫ ---
-const player = new Player(canvas.width / 2, canvas.height / 2, 20, '#00ffcc');
-
-function spawnEnemies() {
-    // Очищаем старый интервал, если он был
-    if (spawnIntervalId) clearInterval(spawnIntervalId);
-    
-    spawnIntervalId = setInterval(() => {
-        if (!gameActive) return;
-        
-        const radius = Math.random() * 25 + 15;
-        let x, y;
-        if (Math.random() < 0.5) {
-            x = Math.random() < 0.5 ? 0 - radius : canvas.width + radius;
-            y = Math.random() * canvas.height;
-        } else {
-            x = Math.random() * canvas.width;
-            y = Math.random() < 0.5 ? 0 - radius : canvas.height + radius;
+        class Projectile {
+            constructor(x, y, radius, color, velocity) {
+                this.x = x; this.y = y; this.radius = radius; this.color = color; this.velocity = velocity;
+            }
+            draw() {
+                ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.color; ctx.fill();
+            }
+            update() { this.draw(); this.x += this.velocity.x; this.y += this.velocity.y; }
         }
-        const color = `hsl(${Math.random() * 360}, 70%, 50%)`;
-        const angle = Math.atan2(player.y - y, player.x - x);
-        const speed = Math.random() * 2 + 1.5;
-        enemies.push(new Enemy(x, y, radius, color, {x: Math.cos(angle) * speed, y: Math.sin(angle) * speed}));
-    }, 900);
-}
 
-// ФУНКЦИЯ ПЕРЕЗАПУСКА (БЕЗ RELOAD)
-function restartGame() {
-    // 1. Сбрасываем все массивы
-    projectiles.length = 0;
-    enemies.length = 0;
-    particles.length = 0;
-    
-    // 2. Сбрасываем игрока и счет
-    score = 0;
-    player.x = canvas.width / 2;
-    player.y = canvas.height / 2;
-    player.color = '#00ffcc';
-    powerUpActive = false;
-    
-    // 3. Запускаем игру
-    gameActive = true;
-    spawnEnemies();
-    animate();
-}
+        class Enemy {
+            constructor(x, y, radius, color, velocity) {
+                this.x = x; this.y = y; this.radius = radius; this.color = color; this.velocity = velocity;
+            }
+            draw() {
+                ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.color; ctx.fill();
+            }
+            update() { this.draw(); this.x += this.velocity.x; this.y += this.velocity.y; }
+        }
 
-function animate() {
-    // Если игра не активна (Game Over), не рисуем кадры
-    if (!gameActive) return;
+        const player = new Player(canvas.width/2, canvas.height/2, 15, '#00ffcc');
 
-    animationId = requestAnimationFrame(animate);
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+        function spawnEnemies() {
+            spawnIntervalId = setInterval(() => {
+                const radius = Math.random() * 20 + 15;
+                let x, y;
+                if (Math.random() < 0.5) {
+                    x = Math.random() < 0.5 ? -radius : canvas.width + radius;
+                    y = Math.random() * canvas.height;
+                } else {
+                    x = Math.random() * canvas.width;
+                    y = Math.random() < 0.5 ? -radius : canvas.height + radius;
+                }
+                const color = `hsl(${Math.random() * 360}, 70%, 50%)`;
+                const angle = Math.atan2(player.y - y, player.x - x);
+                enemies.push(new Enemy(x, y, radius, color, {x: Math.cos(angle)*2, y: Math.sin(angle)*2}));
+            }, 1000);
+        }
 
-    ctx.fillStyle = 'white';
-    ctx.font = 'bold 28px sans
+        function startGame() {
+            gameActive = true;
+            score = 0;
+            enemies.length = 0;
+            projectiles.length = 0;
+            spawnEnemies();
+            animate();
+        }
+
+        function animate() {
+            if (!gameActive) return;
+            animationId = requestAnimationFrame(animate);
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            player.update();
+            ui.innerHTML = `Score: ${score}`;
+
+            projectiles.forEach((p, i) => {
+                p.update();
+                if (p.x < 0 || p.x > canvas.width || p.y < 0 || p.y > canvas.height) projectiles.splice(i, 1);
+            });
+
+            enemies.forEach((enemy, index) => {
+                enemy.update();
+                const dist = Math.hypot(player.x - enemy.x, player.y - enemy.y);
+                if (dist - enemy.radius - player.radius < 1) {
+                    gameActive = false;
+                    clearInterval(spawnIntervalId);
+                    cancelAnimationFrame(animationId);
+                    alert("GAME OVER! Score: " + score);
+                    location.reload();
+                }
+
+                projectiles.forEach((p, pIndex) => {
+                    const d = Math.hypot(p.x - enemy.x, p.y - enemy.y);
+                    if (d - enemy.radius - p.radius < 1) {
+                        score += 100;
+                        enemies.splice(index, 1);
+                        projectiles.splice(pIndex, 1);
+                    }
+                });
+            });
+        }
+
+        drawStartScreen();
+    </script>
+</body>
+</html>
